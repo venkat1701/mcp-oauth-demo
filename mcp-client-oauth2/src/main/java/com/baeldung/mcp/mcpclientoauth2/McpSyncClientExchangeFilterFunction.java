@@ -1,9 +1,7 @@
 package com.baeldung.mcp.mcpclientoauth2;
 
 import java.util.function.Consumer;
-import reactor.core.publisher.Mono;
 
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.oauth2.client.ClientCredentialsOAuth2AuthorizedClientProvider;
@@ -20,21 +18,7 @@ import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 
-/**
- * A wrapper around Spring Security's
- * {@link ServletOAuth2AuthorizedClientExchangeFilterFunction}, which adds OAuth2
- * {@code access_token}s to requests sent to the MCP server.
- * <p>
- * The end goal is to use access_token that represent the end-user's permissions. Those
- * tokens are obtained using the {@code authorization_code} OAuth2 flow, but it requires a
- * user to be present and using their browser.
- * <p>
- * By default, the MCP tools are initialized on app startup, so some requests to the MCP
- * server happen, to establish the session (/sse), and to send the {@code initialize} and
- * e.g. {@code tools/list} requests. For this to work, we need an access_token, but we
- * cannot get one using the authorization_code flow (no user is present). Instead, we rely
- * on the OAuth2 {@code client_credentials} flow for machine-to-machine communication.
- */
+import reactor.core.publisher.Mono;
 
 @Component
 public class McpSyncClientExchangeFilterFunction implements ExchangeFilterFunction {
@@ -45,40 +29,21 @@ public class McpSyncClientExchangeFilterFunction implements ExchangeFilterFuncti
 
     private final ClientRegistrationRepository clientRegistrationRepository;
 
-    // Must match registration id in property
-    // spring.security.oauth2.client.registration.<REGISTRATION-ID>.authorization-grant-type=authorization_code
     private static final String AUTHORIZATION_CODE_CLIENT_REGISTRATION_ID = "authserver";
 
-    // Must match registration id in property
-    // spring.security.oauth2.client.registration.<REGISTRATION-ID>.authorization-grant-type=client_credentials
     private static final String CLIENT_CREDENTIALS_CLIENT_REGISTRATION_ID = "authserver-client-credentials";
 
-    public McpSyncClientExchangeFilterFunction(@Qualifier("authorizedClientManager") OAuth2AuthorizedClientManager clientManager,
-        ClientRegistrationRepository clientRegistrationRepository) {
+    public McpSyncClientExchangeFilterFunction(OAuth2AuthorizedClientManager clientManager, ClientRegistrationRepository clientRegistrationRepository) {
         this.delegate = new ServletOAuth2AuthorizedClientExchangeFilterFunction(clientManager);
         this.delegate.setDefaultClientRegistrationId(AUTHORIZATION_CODE_CLIENT_REGISTRATION_ID);
         this.clientRegistrationRepository = clientRegistrationRepository;
     }
 
-    /**
-     * Add an {@code access_token} to the request sent to the MCP server.
-     * <p>
-     * If we are in the context of a ServletRequest, this means a user is currently
-     * involved, and we should add a token on behalf of the user, using the
-     * {@code authorization_code} grant. This typically happens when doing an MCP
-     * {@code tools/call}.
-     * <p>
-     * If we are NOT in the context of a ServletRequest, this means we are in the startup
-     * phases of the application, where the MCP client is initialized. We use the
-     * {@code client_credentials} grant in that case, and add a token on behalf of the
-     * application itself.
-     */
     @Override
     public Mono<ClientResponse> filter(ClientRequest request, ExchangeFunction next) {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes) {
             return this.delegate.filter(request, next);
-        }
-        else {
+        } else {
             var accessToken = getClientCredentialsAccessToken();
             var requestWithToken = ClientRequest.from(request)
                 .headers(headers -> headers.setBearerAuth(accessToken))
@@ -88,21 +53,20 @@ public class McpSyncClientExchangeFilterFunction implements ExchangeFilterFuncti
     }
 
     private String getClientCredentialsAccessToken() {
-        var clientRegistration = this.clientRegistrationRepository
-            .findByRegistrationId(CLIENT_CREDENTIALS_CLIENT_REGISTRATION_ID);
+        var clientRegistration = this.clientRegistrationRepository.findByRegistrationId(CLIENT_CREDENTIALS_CLIENT_REGISTRATION_ID);
 
         var authRequest = OAuth2AuthorizationContext.withClientRegistration(clientRegistration)
             .principal(new AnonymousAuthenticationToken("client-credentials-client", "client-credentials-client",
                 AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS")))
             .build();
-        return this.clientCredentialTokenProvider.authorize(authRequest).getAccessToken().getTokenValue();
+        return this.clientCredentialTokenProvider.authorize(authRequest)
+            .getAccessToken()
+            .getTokenValue();
     }
 
-    /**
-     * Configure a {@link WebClient} to use this exchange filter function.
-     */
     public Consumer<WebClient.Builder> configuration() {
-        return builder -> builder.defaultRequest(this.delegate.defaultRequest()).filter(this);
+        return builder -> builder.defaultRequest(this.delegate.defaultRequest())
+            .filter(this);
     }
 
 }
