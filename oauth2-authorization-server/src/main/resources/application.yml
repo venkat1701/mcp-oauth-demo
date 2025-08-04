@@ -1,13 +1,7 @@
 server:
   port: 9000
-  servlet:
-    session:
-      cookie:
-        name: MCP_AUTHSERVER_SESSION
 
 spring:
-  application:
-    name: oauth2-authorization-server
   security:
     user:
       name: user
@@ -26,15 +20,9 @@ spring:
                 - "client_credentials"
                 - "refresh_token"
               redirect-uris:
-                - "http://127.0.0.1:8080/authorize/oauth2/code/authserver"
                 - "http://localhost:8080/authorize/oauth2/code/authserver"
               scopes:
                 - "openid"
                 - "profile"
-                - "mcp.read"
-                - "mcp.write"
-
-logging:
-  level:
-    org.springframework.security: DEBUG
-    org.springframework.security.oauth2: DEBUG
+                - "calc.read"
+                - "calc.write"
